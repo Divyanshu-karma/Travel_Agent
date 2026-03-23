@@ -18,8 +18,8 @@ st.caption("Ask about destinations, hotels, and travel services!")
 
 # -------------------- CLIENT INIT --------------------
 openai_client = OpenAI(
-    api_key=API_KEY,
-    base_url=f"{AZURE_OPENAI_ENDPOINT.rstrip('/')}/openai/v1/"
+    api_key=os.getenv("API_KEY")
+   
 )
 
 # -------------------- VECTOR STORE SETUP --------------------
