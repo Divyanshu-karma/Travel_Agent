@@ -1,49 +1,85 @@
 import os
-from dotenv import load_dotenv
 import glob
+import streamlit as st
+from dotenv import load_dotenv
+from openai import OpenAI
 
-# Import namespaces
+# -----------------------------
+# Load ENV only once
+# -----------------------------
+@st.cache_resource
+def load_config():
+    load_dotenv()
+    return {
+        "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+        "api_key": os.getenv("API_KEY"),
+        "model": os.getenv("MODEL_DEPLOYMENT")
+    }
 
+# -----------------------------
+# Initialize client (cached)
+# -----------------------------
+@st.cache_resource
+def init_client():
+    config = load_config()
+    client = OpenAI(
+        api_key=config["api_key"],
+        base_url=config["endpoint"]
+    )
+    return client
 
+# -----------------------------
+# Load PDFs (only 1–2)
+# -----------------------------
+@st.cache_resource
+def load_files():
+    files = glob.glob("brochures/*.pdf")[:2]  # limit to 2 files
+    return files
 
-def main(): 
-    # Clear the console
-    os.system('cls' if os.name == 'nt' else 'clear')
+# -----------------------------
+# Create vector store (cached)
+# -----------------------------
+@st.cache_resource
+def create_vector_store(client, files):
+    print("Creating vector store... (only once)")
 
-    try:
-        # Get configuration settings 
-        load_dotenv()
-        azure_openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        api_key = os.getenv("API_KEY")
-        model_deployment = os.getenv("MODEL_DEPLOYMENT")
+    file_streams = [open(file, "rb") for file in files]
 
-        # Initialize the OpenAI client
+    vector_store = client.vector_stores.create(name="travel-brochures")
 
+    client.vector_stores.file_batches.upload_and_poll(
+        vector_store_id=vector_store.id,
+        files=file_streams
+    )
 
+    return vector_store
 
-        # Create vector store and upload files
+# -----------------------------
+# Streamlit UI
+# -----------------------------
+def main():
+    st.title("🌍 Travel Assistant (Fast Version)")
 
+    client = init_client()
+    files = load_files()
+    vector_store = create_vector_store(client, files)
 
+    user_input = st.text_input("Ask a question about travel brochures:")
 
-        # Track conversation state
-        last_response_id = None
+    if user_input:
+        with st.spinner("Thinking..."):
 
-        # Loop until the user wants to quit
-        while True:
-            input_text = input('\nEnter a question (or type "quit" to exit): ')
-            if input_text.lower() == "quit":
-                break
-            if len(input_text) == 0:
-                print("Please enter a question.")
-                continue
+            response = client.responses.create(
+                model=load_config()["model"],
+                input=user_input,
+                tools=[{
+                    "type": "file_search",
+                    "vector_store_ids": [vector_store.id]
+                }]
+            )
 
-            # Get a response using tools
-            
+            st.write(response.output_text)
 
-
-
-    except Exception as ex:
-        print(ex)
-
-if __name__ == '__main__': 
+# -----------------------------
+if __name__ == "__main__":
     main()
